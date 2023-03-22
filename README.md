@@ -22,10 +22,10 @@ package main
 
 import (
     "fmt"
-    "net/http"
+    "github.com/gofiber/fiber/v2"
 )
 
-func hello(w http.ResponseWriter, r *http.Request) {
+func hello(ctx *fiber.Ctx) error {
     fmt.Fprintf(w, "Hello, World!")
 }
 
@@ -51,13 +51,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"net/http"
+	"github.com/gofiber/fiber/v2"
 	"net/url"
 
 	"github.com/crewjam/saml/samlsp"
 )
 
-func hello(w http.ResponseWriter, r *http.Request) {
+func hello(ctx *fiber.Ctx) error {
 	fmt.Fprintf(w, "Hello, %s!", samlsp.AttributeFromContext(r.Context(), "displayName"))
 }
 

@@ -1,7 +1,7 @@
 package samlsp
 
 import (
-	"net/http"
+	"github.com/gofiber/fiber/v2"
 )
 
 // RequestTracker tracks pending authentication requests.
@@ -16,17 +16,17 @@ import (
 type RequestTracker interface {
 	// TrackRequest starts tracking the SAML request with the given ID. It returns an
 	// `index` that should be used as the RelayState in the SAMl request flow.
-	TrackRequest(w http.ResponseWriter, r *http.Request, samlRequestID string) (index string, err error)
+	TrackRequest(ctx *fiber.Ctx, samlRequestID string) (index string, err error)
 
 	// StopTrackingRequest stops tracking the SAML request given by index, which is a string
 	// previously returned from TrackRequest
-	StopTrackingRequest(w http.ResponseWriter, r *http.Request, index string) error
+	StopTrackingRequest(ctx *fiber.Ctx, index string) error
 
 	// GetTrackedRequests returns all the pending tracked requests
-	GetTrackedRequests(r *http.Request) []TrackedRequest
+	GetTrackedRequests(ctx *fiber.Ctx) error []TrackedRequest
 
 	// GetTrackedRequest returns a pending tracked request.
-	GetTrackedRequest(r *http.Request, index string) (*TrackedRequest, error)
+	GetTrackedRequest(ctx *fiber.Ctx, index string) (*TrackedRequest, error)
 }
 
 // TrackedRequest holds the data we store for each pending request.

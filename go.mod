@@ -1,4 +1,4 @@
-module github.com/crewjam/saml
+module github.com/meftunca/fiber-saml
 
 go 1.16
 
@@ -6,6 +6,7 @@ require (
 	github.com/beevik/etree v1.1.0
 	github.com/crewjam/httperr v0.2.0
 	github.com/dchest/uniuri v1.2.0
+	github.com/gofiber/fiber/v2 v2.42.0
 	github.com/golang-jwt/jwt/v4 v4.4.3
 	github.com/google/go-cmp v0.5.9
 	github.com/kr/pretty v0.3.1
@@ -14,6 +15,6 @@ require (
 	github.com/russellhaering/goxmldsig v1.2.0
 	github.com/stretchr/testify v1.8.1
 	github.com/zenazn/goji v1.0.1
-	golang.org/x/crypto v0.0.0-20220128200615-198e4374d7ed
+	golang.org/x/crypto v0.0.0-20220214200702-86341886e292
 	gotest.tools v2.2.0+incompatible
 )

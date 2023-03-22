@@ -3,7 +3,8 @@ package samlsp
 import (
 	"context"
 	"errors"
-	"net/http"
+
+	"github.com/gofiber/fiber/v2"
 
 	"github.com/crewjam/saml"
 )
@@ -27,15 +28,15 @@ type SessionProvider interface {
 	// CreateSession is called when we have received a valid SAML assertion and
 	// should create a new session and modify the http response accordingly, e.g. by
 	// setting a cookie.
-	CreateSession(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion) error
+	CreateSession(ctx *fiber.Ctx, assertion *saml.Assertion) error
 
 	// DeleteSession is called to modify the response such that it removed the current
 	// session, e.g. by deleting a cookie.
-	DeleteSession(w http.ResponseWriter, r *http.Request) error
+	DeleteSession(ctx *fiber.Ctx) error error
 
 	// GetSession returns the current Session associated with the request, or
 	// ErrNoSession if there is no valid session.
-	GetSession(r *http.Request) (Session, error)
+	GetSession(ctx *fiber.Ctx) error (Session, error)
 }
 
 // SessionCodec is an interface to convert SAML assertions to a

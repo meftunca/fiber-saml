@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/crewjam/saml"
 )
 
@@ -27,7 +29,7 @@ type CookieSessionProvider struct {
 // CreateSession is called when we have received a valid SAML assertion and
 // should create a new session and modify the http response accordingly, e.g. by
 // setting a cookie.
-func (c CookieSessionProvider) CreateSession(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion) error {
+func (c CookieSessionProvider) CreateSession(ctx *fiber.Ctx, assertion *saml.Assertion) error {
 	// Cookies should not have the port attached to them so strip it off
 	if domain, _, err := net.SplitHostPort(c.Domain); err == nil {
 		c.Domain = domain
@@ -58,7 +60,7 @@ func (c CookieSessionProvider) CreateSession(w http.ResponseWriter, r *http.Requ
 
 // DeleteSession is called to modify the response such that it removed the current
 // session, e.g. by deleting a cookie.
-func (c CookieSessionProvider) DeleteSession(w http.ResponseWriter, r *http.Request) error {
+func (c CookieSessionProvider) DeleteSession(ctx *fiber.Ctx) error error {
 	// Cookies should not have the port attached to them so strip it off
 	if domain, _, err := net.SplitHostPort(c.Domain); err == nil {
 		c.Domain = domain
@@ -83,7 +85,7 @@ func (c CookieSessionProvider) DeleteSession(w http.ResponseWriter, r *http.Requ
 
 // GetSession returns the current Session associated with the request, or
 // ErrNoSession if there is no valid session.
-func (c CookieSessionProvider) GetSession(r *http.Request) (Session, error) {
+func (c CookieSessionProvider) GetSession(ctx *fiber.Ctx) error (Session, error) {
 	cookie, err := r.Cookie(c.Name)
 	if err == http.ErrNoCookie {
 		return nil, ErrNoSession

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/zenazn/goji/web"
 )
 
@@ -31,7 +33,7 @@ type Shortcut struct {
 
 // HandleListShortcuts handles the `GET /shortcuts/` request and responds with a JSON formatted list
 // of shortcut names.
-func (s *Server) HandleListShortcuts(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleListShortcuts(c web.C, ctx *fiber.Ctx) {
 	shortcuts, err := s.Store.List("/shortcuts/")
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -45,7 +47,7 @@ func (s *Server) HandleListShortcuts(c web.C, w http.ResponseWriter, r *http.Req
 
 // HandleGetShortcut handles the `GET /shortcuts/:id` request and responds with the shortcut
 // object in JSON format.
-func (s *Server) HandleGetShortcut(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGetShortcut(c web.C, ctx *fiber.Ctx) {
 	shortcut := Shortcut{}
 	err := s.Store.Get(fmt.Sprintf("/shortcuts/%s", c.URLParams["id"]), &shortcut)
 	if err != nil {
@@ -57,7 +59,7 @@ func (s *Server) HandleGetShortcut(c web.C, w http.ResponseWriter, r *http.Reque
 
 // HandlePutShortcut handles the `PUT /shortcuts/:id` request. It accepts a JSON formatted
 // shortcut object in the request body and stores it.
-func (s *Server) HandlePutShortcut(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandlePutShortcut(c web.C, ctx *fiber.Ctx) {
 	shortcut := Shortcut{}
 	if err := json.NewDecoder(r.Body).Decode(&shortcut); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -74,7 +76,7 @@ func (s *Server) HandlePutShortcut(c web.C, w http.ResponseWriter, r *http.Reque
 }
 
 // HandleDeleteShortcut handles the `DELETE /shortcuts/:id` request.
-func (s *Server) HandleDeleteShortcut(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleDeleteShortcut(c web.C, ctx *fiber.Ctx) {
 	err := s.Store.Delete(fmt.Sprintf("/shortcuts/%s", c.URLParams["id"]))
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -86,7 +88,7 @@ func (s *Server) HandleDeleteShortcut(c web.C, w http.ResponseWriter, r *http.Re
 // HandleIDPInitiated handles a request for an IDP initiated login flow. It looks up
 // the specified shortcut, generates the appropriate SAML assertion and redirects the
 // user via the HTTP-POST binding to the service providers ACS URL.
-func (s *Server) HandleIDPInitiated(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleIDPInitiated(c web.C, ctx *fiber.Ctx) {
 	shortcutName := c.URLParams["shortcut"]
 	shortcut := Shortcut{}
 	if err := s.Store.Get(fmt.Sprintf("/shortcuts/%s", shortcutName), &shortcut); err != nil {
@@ -105,5 +107,5 @@ func (s *Server) HandleIDPInitiated(c web.C, w http.ResponseWriter, r *http.Requ
 
 	s.idpConfigMu.RLock()
 	defer s.idpConfigMu.RUnlock()
-	s.IDP.ServeIDPInitiated(w, r, shortcut.ServiceProviderID, relayState)
+	s.IDP.ServeIDPInitiated(ctx, shortcut.ServiceProviderID, relayState)
 }

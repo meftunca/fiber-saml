@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/dchest/uniuri"
 	"github.com/kr/pretty"
 	"github.com/zenazn/goji"
@@ -32,7 +34,7 @@ type Link struct {
 }
 
 // CreateLink handles requests to create links
-func CreateLink(c web.C, w http.ResponseWriter, r *http.Request) {
+func CreateLink(c web.C, ctx *fiber.Ctx) {
 	account := r.Header.Get("X-Remote-User")
 	l := Link{
 		ShortLink: uniuri.New(),
@@ -46,18 +48,18 @@ func CreateLink(c web.C, w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeLink handles requests to redirect to a link
-func ServeLink(c web.C, w http.ResponseWriter, r *http.Request) {
+func ServeLink(c web.C, ctx *fiber.Ctx) {
 	l, ok := links[strings.TrimPrefix(r.URL.Path, "/")]
 	if !ok {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	http.Redirect(w, r, l.Target, http.StatusFound)
+	http.Redirect(ctx, l.Target, http.StatusFound)
 	return
 }
 
 // ListLinks returns a list of the current user's links
-func ListLinks(c web.C, w http.ResponseWriter, r *http.Request) {
+func ListLinks(c web.C, ctx *fiber.Ctx) {
 	account := r.Header.Get("X-Remote-User")
 	for _, l := range links {
 		if l.Owner == account {
@@ -151,7 +153,7 @@ func main() {
 
 	authMux := web.New()
 	authMux.Use(samlSP.RequireAccount)
-	authMux.Get("/whoami", func(w http.ResponseWriter, r *http.Request) {
+	authMux.Get("/whoami", func(ctx *fiber.Ctx) error {
 		pretty.Fprintf(w, "%# v", r)
 	})
 	authMux.Post("/", CreateLink)

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/zenazn/goji/web"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -25,7 +27,7 @@ type User struct {
 
 // HandleListUsers handles the `GET /users/` request and responds with a JSON formatted list
 // of user names.
-func (s *Server) HandleListUsers(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleListUsers(c web.C, ctx *fiber.Ctx) {
 	users, err := s.Store.List("/users/")
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
@@ -40,7 +42,7 @@ func (s *Server) HandleListUsers(c web.C, w http.ResponseWriter, r *http.Request
 
 // HandleGetUser handles the `GET /users/:id` request and responds with the user object in JSON
 // format. The HashedPassword field is excluded.
-func (s *Server) HandleGetUser(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGetUser(c web.C, ctx *fiber.Ctx) {
 	user := User{}
 	err := s.Store.Get(fmt.Sprintf("/users/%s", c.URLParams["id"]), &user)
 	if err != nil {
@@ -56,7 +58,7 @@ func (s *Server) HandleGetUser(c web.C, w http.ResponseWriter, r *http.Request) 
 // the request body and stores it. If the PlaintextPassword field is present then it is hashed
 // and stored in HashedPassword. If the PlaintextPassword field is not present then
 // HashedPassword retains it's stored value.
-func (s *Server) HandlePutUser(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) {
 	user := User{}
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 		s.logger.Printf("ERROR: %s", err)
@@ -99,7 +101,7 @@ func (s *Server) HandlePutUser(c web.C, w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleDeleteUser handles the `DELETE /users/:id` request.
-func (s *Server) HandleDeleteUser(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleDeleteUser(c web.C, ctx *fiber.Ctx) {
 	err := s.Store.Delete(fmt.Sprintf("/users/%s", c.URLParams["id"]))
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)

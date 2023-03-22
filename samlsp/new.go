@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/gofiber/fiber/v2"
+
 	dsig "github.com/russellhaering/goxmldsig"
 
 	"github.com/crewjam/saml"
@@ -29,7 +31,7 @@ type Options struct {
 	RequestedAuthnContext *saml.RequestedAuthnContext
 	CookieSameSite        http.SameSite
 	CookieName            string
-	RelayStateFunc        func(w http.ResponseWriter, r *http.Request) string
+	RelayStateFunc        func(ctx *fiber.Ctx) error string
 	LogoutBindings        []string
 }
 

@@ -10,23 +10,25 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/crewjam/saml/samlsp"
 )
 
 var samlMiddleware *samlsp.Middleware
 
-func hello(w http.ResponseWriter, r *http.Request) {
+func hello(ctx *fiber.Ctx) error {
 	fmt.Fprintf(w, "Hello, %s!", samlsp.AttributeFromContext(r.Context(), "displayName"))
 }
 
-func logout(w http.ResponseWriter, r *http.Request) {
+func logout(ctx *fiber.Ctx) error {
 	nameID := samlsp.AttributeFromContext(r.Context(), "urn:oasis:names:tc:SAML:attribute:subject-id")
 	url, err := samlMiddleware.ServiceProvider.MakeRedirectLogoutRequest(nameID, "")
 	if err != nil {
 		panic(err) // TODO handle error
 	}
 
-	err = samlMiddleware.Session.DeleteSession(w, r)
+	err = samlMiddleware.Session.DeleteSession(ctx)
 	if err != nil {
 		panic(err) // TODO handle error
 	}

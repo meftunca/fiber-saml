@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/zenazn/goji/web"
 
 	"github.com/crewjam/saml"
@@ -85,15 +87,15 @@ func (s *Server) InitializeHTTP() {
 	mux := web.New()
 	s.Handler = mux
 
-	mux.Get("/metadata", func(w http.ResponseWriter, r *http.Request) {
+	mux.Get("/metadata", func(ctx *fiber.Ctx) error {
 		s.idpConfigMu.RLock()
 		defer s.idpConfigMu.RUnlock()
-		s.IDP.ServeMetadata(w, r)
+		s.IDP.ServeMetadata(ctx)
 	})
-	mux.Handle("/sso", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/sso", func(ctx *fiber.Ctx) error {
 		s.idpConfigMu.RLock()
 		defer s.idpConfigMu.RUnlock()
-		s.IDP.ServeSSO(w, r)
+		s.IDP.ServeSSO(ctx)
 	})
 
 	mux.Handle("/login", s.HandleLogin)

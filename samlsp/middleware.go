@@ -4,6 +4,8 @@ import (
 	"encoding/xml"
 	"net/http"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/crewjam/saml"
 )
 
@@ -40,7 +42,7 @@ import (
 // to sign the JWTs as well.
 type Middleware struct {
 	ServiceProvider saml.ServiceProvider
-	OnError         func(w http.ResponseWriter, r *http.Request, err error)
+	OnError         func(ctx *fiber.Ctx, err error)
 	Binding         string // either saml.HTTPPostBinding or saml.HTTPRedirectBinding
 	ResponseBinding string // either saml.HTTPPostBinding or saml.HTTPArtifactBinding
 	RequestTracker  RequestTracker
@@ -50,22 +52,22 @@ type Middleware struct {
 // ServeHTTP implements http.Handler and serves the SAML-specific HTTP endpoints
 // on the URIs specified by m.ServiceProvider.MetadataURL and
 // m.ServiceProvider.AcsURL.
-func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *Middleware) ServeHTTP(ctx *fiber.Ctx) error {
 	if r.URL.Path == m.ServiceProvider.MetadataURL.Path {
-		m.ServeMetadata(w, r)
+		m.ServeMetadata(ctx)
 		return
 	}
 
 	if r.URL.Path == m.ServiceProvider.AcsURL.Path {
-		m.ServeACS(w, r)
+		m.ServeACS(ctx)
 		return
 	}
 
-	http.NotFoundHandler().ServeHTTP(w, r)
+	http.NotFoundHandler().ServeHTTP(ctx)
 }
 
 // ServeMetadata handles requests for the SAML metadata endpoint.
-func (m *Middleware) ServeMetadata(w http.ResponseWriter, r *http.Request) {
+func (m *Middleware) ServeMetadata(ctx *fiber.Ctx) error {
 	buf, _ := xml.MarshalIndent(m.ServiceProvider.Metadata(), "", "  ")
 	w.Header().Set("Content-Type", "application/samlmetadata+xml")
 	w.Write(buf)
@@ -73,7 +75,7 @@ func (m *Middleware) ServeMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeACS handles requests for the SAML ACS endpoint.
-func (m *Middleware) ServeACS(w http.ResponseWriter, r *http.Request) {
+func (m *Middleware) ServeACS(ctx *fiber.Ctx) error {
 	r.ParseForm()
 
 	possibleRequestIDs := []string{}
@@ -88,11 +90,11 @@ func (m *Middleware) ServeACS(w http.ResponseWriter, r *http.Request) {
 
 	assertion, err := m.ServiceProvider.ParseResponse(r, possibleRequestIDs)
 	if err != nil {
-		m.OnError(w, r, err)
+		m.OnError(ctx, err)
 		return
 	}
 
-	m.CreateSessionFromAssertion(w, r, assertion, m.ServiceProvider.DefaultRedirectURI)
+	m.CreateSessionFromAssertion(ctx, assertion, m.ServiceProvider.DefaultRedirectURI)
 	return
 }
 
@@ -101,25 +103,25 @@ func (m *Middleware) ServeACS(w http.ResponseWriter, r *http.Request) {
 // session, then rather than serve the request, the middleware redirects the user
 // to start the SAML auth flow.
 func (m *Middleware) RequireAccount(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(ctx *fiber.Ctx) error {
 		session, err := m.Session.GetSession(r)
 		if session != nil {
 			r = r.WithContext(ContextWithSession(r.Context(), session))
-			handler.ServeHTTP(w, r)
+			handler.ServeHTTP(ctx)
 			return
 		}
 		if err == ErrNoSession {
-			m.HandleStartAuthFlow(w, r)
+			m.HandleStartAuthFlow(ctx)
 			return
 		}
 
-		m.OnError(w, r, err)
+		m.OnError(ctx, err)
 		return
 	})
 }
 
 // HandleStartAuthFlow is called to start the SAML authentication process.
-func (m *Middleware) HandleStartAuthFlow(w http.ResponseWriter, r *http.Request) {
+func (m *Middleware) HandleStartAuthFlow(ctx *fiber.Ctx) error {
 	// If we try to redirect when the original request is the ACS URL we'll
 	// end up in a loop. This is a programming error, so we panic here. In
 	// general this means a 500 to the user, which is preferable to a
@@ -151,7 +153,7 @@ func (m *Middleware) HandleStartAuthFlow(w http.ResponseWriter, r *http.Request)
 	// this means that we cannot use a JWT because it is way to long. Instead
 	// we set a signed cookie that encodes the original URL which we'll check
 	// against the SAML response when we get it.
-	relayState, err := m.RequestTracker.TrackRequest(w, r, authReq.ID)
+	relayState, err := m.RequestTracker.TrackRequest(ctx, authReq.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -182,7 +184,7 @@ func (m *Middleware) HandleStartAuthFlow(w http.ResponseWriter, r *http.Request)
 }
 
 // CreateSessionFromAssertion is invoked by ServeHTTP when we have a new, valid SAML assertion.
-func (m *Middleware) CreateSessionFromAssertion(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion, redirectURI string) {
+func (m *Middleware) CreateSessionFromAssertion(ctx *fiber.Ctx, assertion *saml.Assertion, redirectURI string) {
 	if trackedRequestIndex := r.Form.Get("RelayState"); trackedRequestIndex != "" {
 		trackedRequest, err := m.RequestTracker.GetTrackedRequest(r, trackedRequestIndex)
 		if err != nil {
@@ -191,22 +193,22 @@ func (m *Middleware) CreateSessionFromAssertion(w http.ResponseWriter, r *http.R
 					redirectURI = uri
 				}
 			} else {
-				m.OnError(w, r, err)
+				m.OnError(ctx, err)
 				return
 			}
 		} else {
-			m.RequestTracker.StopTrackingRequest(w, r, trackedRequestIndex)
+			m.RequestTracker.StopTrackingRequest(ctx, trackedRequestIndex)
 
 			redirectURI = trackedRequest.URI
 		}
 	}
 
-	if err := m.Session.CreateSession(w, r, assertion); err != nil {
-		m.OnError(w, r, err)
+	if err := m.Session.CreateSession(ctx, assertion); err != nil {
+		m.OnError(ctx, err)
 		return
 	}
 
-	http.Redirect(w, r, redirectURI, http.StatusFound)
+	http.Redirect(ctx, redirectURI, http.StatusFound)
 }
 
 // RequireAttribute returns a middleware function that requires that the
@@ -220,7 +222,7 @@ func (m *Middleware) CreateSessionFromAssertion(w http.ResponseWriter, r *http.R
 //	goji.Use(RequireAttributeMiddleware("eduPersonAffiliation", "Staff"))
 func RequireAttribute(name, value string) func(http.Handler) http.Handler {
 	return func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(ctx *fiber.Ctx) error {
 			if session := SessionFromContext(r.Context()); session != nil {
 				// this will panic if we have the wrong type of Session, and that is OK.
 				sessionWithAttributes := session.(SessionWithAttributes)
@@ -228,7 +230,7 @@ func RequireAttribute(name, value string) func(http.Handler) http.Handler {
 				if values, ok := attributes[name]; ok {
 					for _, v := range values {
 						if v == value {
-							handler.ServeHTTP(w, r)
+							handler.ServeHTTP(ctx)
 							return
 						}
 					}

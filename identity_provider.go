@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,7 +20,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/beevik/etree"
+
 	xrv "github.com/mattermost/xml-roundtrip-validator"
 	dsig "github.com/russellhaering/goxmldsig"
 
@@ -59,7 +63,7 @@ type SessionProvider interface {
 	//
 	// If (and only if) the request is not associated with a session then GetSession
 	// must complete the HTTP request and return nil.
-	GetSession(w http.ResponseWriter, r *http.Request, req *IdpAuthnRequest) *Session
+	GetSession(ctx *fiber.Ctx, req *IdpAuthnRequest) *Session
 }
 
 // ServiceProviderProvider is an interface used by IdentityProvider to look up
@@ -69,7 +73,7 @@ type ServiceProviderProvider interface {
 	// service provider ID, which is typically the service provider's
 	// metadata URL. If an appropriate service provider cannot be found then
 	// the returned error must be os.ErrNotExist.
-	GetServiceProvider(r *http.Request, serviceProviderID string) (*EntityDescriptor, error)
+	GetServiceProvider(ctx *fiber.Ctx, serviceProviderID string) (*EntityDescriptor, error)
 }
 
 // AssertionMaker is an interface used by IdentityProvider to construct the
@@ -187,20 +191,25 @@ func (idp *IdentityProvider) Metadata() *EntityDescriptor {
 	return ed
 }
 
-// Handler returns an http.Handler that serves the metadata and SSO
+// Handler returns an *fiber.App that serves the metadata and SSO
 // URLs
-func (idp *IdentityProvider) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc(idp.MetadataURL.Path, idp.ServeMetadata)
-	mux.HandleFunc(idp.SSOURL.Path, idp.ServeSSO)
+func (idp *IdentityProvider) Handler() *fiber.App {
+	// mux := http.NewServeMux()
+	// mux.HandleFunc(idp.MetadataURL.Path, idp.ServeMetadata)
+	// mux.HandleFunc(idp.SSOURL.Path, idp.ServeSSO)
+	// return mux
+	// comvert to fiber
+	mux := fiber.New()
+	mux.Get(idp.MetadataURL.Path, idp.ServeMetadata)
+	mux.Get(idp.SSOURL.Path, idp.ServeSSO)
 	return mux
 }
 
-// ServeMetadata is an http.HandlerFunc that serves the IDP metadata
-func (idp *IdentityProvider) ServeMetadata(w http.ResponseWriter, r *http.Request) {
+// ServeMetadata is an *fiber.AppFunc that serves the IDP metadata
+func (idp *IdentityProvider) ServeMetadata(ctx *fiber.Ctx) error {
 	buf, _ := xml.MarshalIndent(idp.Metadata(), "", "  ")
-	w.Header().Set("Content-Type", "application/samlmetadata+xml")
-	w.Write(buf)
+	ctx.Set("Content-Type", "application/samlmetadata+xml")
+	return ctx.Send(buf)
 }
 
 // ServeSSO handles SAML auth requests.
@@ -220,26 +229,26 @@ func (idp *IdentityProvider) ServeMetadata(w http.ResponseWriter, r *http.Reques
 //
 // If the assertion cannot be created or returned, a StatusInternalServerError
 // response is sent.
-func (idp *IdentityProvider) ServeSSO(w http.ResponseWriter, r *http.Request) {
-	req, err := NewIdpAuthnRequest(idp, r)
+func (idp *IdentityProvider) ServeSSO(ctx *fiber.Ctx) error {
+	req, err := NewIdpAuthnRequest(idp, ctx)
 	if err != nil {
 		idp.Logger.Printf("failed to parse request: %s", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+		// http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
 	}
 
 	if err := req.Validate(); err != nil {
 		idp.Logger.Printf("failed to validate request: %s", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+		// http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
 	}
 
 	// TODO(ross): we must check that the request ID has not been previously
 	//   issued.
 
-	session := idp.SessionProvider.GetSession(w, r, req)
+	session := idp.SessionProvider.GetSession(ctx, req)
 	if session == nil {
-		return
+		return errors.New("session is nil")
 	}
 
 	assertionMaker := idp.AssertionMaker
@@ -248,20 +257,21 @@ func (idp *IdentityProvider) ServeSSO(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := assertionMaker.MakeAssertion(req, session); err != nil {
 		idp.Logger.Printf("failed to make assertion: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 	if err := req.WriteResponse(w); err != nil {
 		idp.Logger.Printf("failed to write response: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
+	return nil
 }
 
 // ServeIDPInitiated handes an IDP-initiated authorization request. Requests of this
 // type require us to know a registered service provider and (optionally) the RelayState
 // that will be passed to the application.
-func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Request, serviceProviderID string, relayState string) {
+func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID string, relayState string) {
 	req := &IdpAuthnRequest{
 		IDP:         idp,
 		HTTPRequest: r,
@@ -269,7 +279,7 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 		Now:         TimeNow(),
 	}
 
-	session := idp.SessionProvider.GetSession(w, r, req)
+	session := idp.SessionProvider.GetSession(ctx, req)
 	if session == nil {
 		// If GetSession returns nil, it must have written an HTTP response, per the interface
 		// (this is probably because it drew a login form or something)
@@ -335,7 +345,7 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 // IdpAuthnRequest is used by IdentityProvider to handle a single authentication request.
 type IdpAuthnRequest struct {
 	IDP                     *IdentityProvider
-	HTTPRequest             *http.Request
+	HTTPRequest             *fiber.Request
 	RelayState              string
 	RequestBuffer           []byte
 	Request                 AuthnRequest
@@ -350,16 +360,17 @@ type IdpAuthnRequest struct {
 
 // NewIdpAuthnRequest returns a new IdpAuthnRequest for the given HTTP request to the authorization
 // service.
-func NewIdpAuthnRequest(idp *IdentityProvider, r *http.Request) (*IdpAuthnRequest, error) {
+func NewIdpAuthnRequest(idp *IdentityProvider, ctx *fiber.Ctx) (*IdpAuthnRequest, error) {
 	req := &IdpAuthnRequest{
 		IDP:         idp,
-		HTTPRequest: r,
+		HTTPRequest: ctx.Request(),
 		Now:         TimeNow(),
 	}
 
-	switch r.Method {
+	switch ctx.Method() {
 	case "GET":
-		compressedRequest, err := base64.StdEncoding.DecodeString(r.URL.Query().Get("SAMLRequest"))
+		samlReqeuest := ctx.Query("SAMLRequest")
+		compressedRequest, err := base64.StdEncoding.DecodeString(samlReqeuest)
 		if err != nil {
 			return nil, fmt.Errorf("cannot decode request: %s", err)
 		}
@@ -367,17 +378,18 @@ func NewIdpAuthnRequest(idp *IdentityProvider, r *http.Request) (*IdpAuthnReques
 		if err != nil {
 			return nil, fmt.Errorf("cannot decompress request: %s", err)
 		}
-		req.RelayState = r.URL.Query().Get("RelayState")
+		req.RelayState = ctx.Query("RelayState")
+
 	case "POST":
-		if err := r.ParseForm(); err != nil {
-			return nil, err
-		}
+
 		var err error
-		req.RequestBuffer, err = base64.StdEncoding.DecodeString(r.PostForm.Get("SAMLRequest"))
+		samlReqeuest := ctx.FormValue("SAMLRequest")
+		req.RequestBuffer, err = base64.StdEncoding.DecodeString(samlReqeuest)
 		if err != nil {
 			return nil, err
 		}
-		req.RelayState = r.PostForm.Get("RelayState")
+		req.RelayState = ctx.FormValue("RelayState")
+
 	default:
 		return nil, fmt.Errorf("method not allowed")
 	}

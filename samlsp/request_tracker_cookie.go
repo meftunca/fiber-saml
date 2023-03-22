@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"github.com/crewjam/saml"
 )
 
@@ -19,13 +21,13 @@ type CookieRequestTracker struct {
 	NamePrefix      string
 	Codec           TrackedRequestCodec
 	MaxAge          time.Duration
-	RelayStateFunc  func(w http.ResponseWriter, r *http.Request) string
+	RelayStateFunc  func(ctx *fiber.Ctx) error string
 	SameSite        http.SameSite
 }
 
 // TrackRequest starts tracking the SAML request with the given ID. It returns an
 // `index` that should be used as the RelayState in the SAMl request flow.
-func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Request, samlRequestID string) (string, error) {
+func (t CookieRequestTracker) TrackRequest(ctx *fiber.Ctx, samlRequestID string) (string, error) {
 	trackedRequest := TrackedRequest{
 		Index:         base64.RawURLEncoding.EncodeToString(randomBytes(42)),
 		SAMLRequestID: samlRequestID,
@@ -33,7 +35,7 @@ func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	if t.RelayStateFunc != nil {
-		relayState := t.RelayStateFunc(w, r)
+		relayState := t.RelayStateFunc(ctx)
 		if relayState != "" {
 			trackedRequest.Index = relayState
 		}
@@ -59,7 +61,7 @@ func (t CookieRequestTracker) TrackRequest(w http.ResponseWriter, r *http.Reques
 
 // StopTrackingRequest stops tracking the SAML request given by index, which is a string
 // previously returned from TrackRequest
-func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http.Request, index string) error {
+func (t CookieRequestTracker) StopTrackingRequest(ctx *fiber.Ctx, index string) error {
 	cookie, err := r.Cookie(t.NamePrefix + index)
 	if err != nil {
 		return err
@@ -72,7 +74,7 @@ func (t CookieRequestTracker) StopTrackingRequest(w http.ResponseWriter, r *http
 }
 
 // GetTrackedRequests returns all the pending tracked requests
-func (t CookieRequestTracker) GetTrackedRequests(r *http.Request) []TrackedRequest {
+func (t CookieRequestTracker) GetTrackedRequests(ctx *fiber.Ctx) error []TrackedRequest {
 	rv := []TrackedRequest{}
 	for _, cookie := range r.Cookies() {
 		if !strings.HasPrefix(cookie.Name, t.NamePrefix) {
@@ -94,7 +96,7 @@ func (t CookieRequestTracker) GetTrackedRequests(r *http.Request) []TrackedReque
 }
 
 // GetTrackedRequest returns a pending tracked request.
-func (t CookieRequestTracker) GetTrackedRequest(r *http.Request, index string) (*TrackedRequest, error) {
+func (t CookieRequestTracker) GetTrackedRequest(ctx *fiber.Ctx, index string) (*TrackedRequest, error) {
 	cookie, err := r.Cookie(t.NamePrefix + index)
 	if err != nil {
 		return nil, err

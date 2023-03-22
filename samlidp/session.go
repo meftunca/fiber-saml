@@ -9,6 +9,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/zenazn/goji/web"
@@ -33,17 +35,17 @@ var sessionMaxAge = time.Hour
 //
 // If neither credentials nor a valid session cookie exist, this function
 // sends a login form and returns nil.
-func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
+func (s *Server) GetSession(ctx *fiber.Ctx, req *saml.IdpAuthnRequest) *saml.Session {
 	// if we received login credentials then maybe we can create a session
 	if r.Method == "POST" && r.PostForm.Get("user") != "" {
 		user := User{}
 		if err := s.Store.Get(fmt.Sprintf("/users/%s", r.PostForm.Get("user")), &user); err != nil {
-			s.sendLoginForm(w, r, req, "Invalid username or password")
+			s.sendLoginForm(ctx, req, "Invalid username or password")
 			return nil
 		}
 
 		if err := bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(r.PostForm.Get("password"))); err != nil {
-			s.sendLoginForm(w, r, req, "Invalid username or password")
+			s.sendLoginForm(ctx, req, "Invalid username or password")
 			return nil
 		}
 
@@ -81,7 +83,7 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, req *saml.Id
 		session := &saml.Session{}
 		if err := s.Store.Get(fmt.Sprintf("/sessions/%s", sessionCookie.Value), session); err != nil {
 			if err == ErrNotFound {
-				s.sendLoginForm(w, r, req, "")
+				s.sendLoginForm(ctx, req, "")
 				return nil
 			}
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -89,20 +91,20 @@ func (s *Server) GetSession(w http.ResponseWriter, r *http.Request, req *saml.Id
 		}
 
 		if saml.TimeNow().After(session.ExpireTime) {
-			s.sendLoginForm(w, r, req, "")
+			s.sendLoginForm(ctx, req, "")
 			return nil
 		}
 		return session
 	}
 
-	s.sendLoginForm(w, r, req, "")
+	s.sendLoginForm(ctx, req, "")
 	return nil
 }
 
 // sendLoginForm produces a form which requests a username and password and directs the user
 // back to the IDP authorize URL to restart the SAML login flow, this time establishing a
 // session based on the credentials that were provided.
-func (s *Server) sendLoginForm(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest, toast string) {
+func (s *Server) sendLoginForm(ctx *fiber.Ctx, req *saml.IdpAuthnRequest, toast string) {
 	tmpl := template.Must(template.New("saml-post-form").Parse(`` +
 		`<html>` +
 		`<p>{{.Toast}}</p>` +
@@ -135,12 +137,12 @@ func (s *Server) sendLoginForm(w http.ResponseWriter, r *http.Request, req *saml
 // in the request body, then they are validated. For valid credentials, the response is a
 // 200 OK and the JSON session object. For invalid credentials, the HTML login prompt form
 // is sent.
-func (s *Server) HandleLogin(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleLogin(c web.C, ctx *fiber.Ctx) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-	session := s.GetSession(w, r, &saml.IdpAuthnRequest{IDP: &s.IDP})
+	session := s.GetSession(ctx, &saml.IdpAuthnRequest{IDP: &s.IDP})
 	if session == nil {
 		return
 	}
@@ -149,7 +151,7 @@ func (s *Server) HandleLogin(c web.C, w http.ResponseWriter, r *http.Request) {
 
 // HandleListSessions handles the `GET /sessions/` request and responds with a JSON formatted list
 // of session names.
-func (s *Server) HandleListSessions(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleListSessions(c web.C, ctx *fiber.Ctx) {
 	sessions, err := s.Store.List("/sessions/")
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -163,7 +165,7 @@ func (s *Server) HandleListSessions(c web.C, w http.ResponseWriter, r *http.Requ
 
 // HandleGetSession handles the `GET /sessions/:id` request and responds with the session
 // object in JSON format.
-func (s *Server) HandleGetSession(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGetSession(c web.C, ctx *fiber.Ctx) {
 	session := saml.Session{}
 	err := s.Store.Get(fmt.Sprintf("/sessions/%s", c.URLParams["id"]), &session)
 	if err != nil {
@@ -175,7 +177,7 @@ func (s *Server) HandleGetSession(c web.C, w http.ResponseWriter, r *http.Reques
 
 // HandleDeleteSession handles the `DELETE /sessions/:id` request. It invalidates the
 // specified session.
-func (s *Server) HandleDeleteSession(c web.C, w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleDeleteSession(c web.C, ctx *fiber.Ctx) {
 	err := s.Store.Delete(fmt.Sprintf("/sessions/%s", c.URLParams["id"]))
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
