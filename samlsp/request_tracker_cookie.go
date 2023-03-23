@@ -83,7 +83,7 @@ func (t CookieRequestTracker) StopTrackingRequest(ctx *fiber.Ctx, index string) 
 }
 
 // GetTrackedRequests returns all the pending tracked requests
-func (t CookieRequestTracker) GetTrackedRequests(ctx *fiber.Ctx) []TrackedRequest {
+func (t CookieRequestTracker) GetTrackedRequests(ctx *fiber.Ctx) ([]TrackedRequest, error) {
 	rv := []TrackedRequest{}
 	// for _, cookie := range r.Cookies() {
 	ctx.Request().Header.VisitAllCookie(func(key, value []byte) {
@@ -120,7 +120,7 @@ func (t CookieRequestTracker) GetTrackedRequests(ctx *fiber.Ctx) []TrackedReques
 
 	// 	rv = append(rv, *trackedRequest)
 	// }
-	return rv
+	return rv, nil
 }
 
 // GetTrackedRequest returns a pending tracked request.

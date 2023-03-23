@@ -126,12 +126,16 @@ func (m *Middleware) ServeACS(ctx *fiber.Ctx) error {
 //			return
 //		})
 //	}
-func RequireAccount(handler fiber.Handler) fiber.Handler {
+func (m *Middleware) RequireAccount(handler fiber.Handler) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		if session := SessionFromContext(ctx.Context()); session == nil {
+		session := SessionFromContext(ctx.Context())
+		if session == nil {
 			// http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return ctx.Status(http.StatusUnauthorized).SendString(http.StatusText(http.StatusUnauthorized))
 		}
+		ctx.Locals("session", session)
+		m.HandleStartAuthFlow(ctx)
+
 		return handler(ctx)
 	}
 }

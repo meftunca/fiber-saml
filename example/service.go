@@ -161,12 +161,16 @@ func main() {
 	authMux.Use(samlSP.RequireAccount)
 	authMux.Get("/whoami", func(ctx *fiber.Ctx) error {
 		// pretty.Fprintf(w, "%# v", r)
-		ss, err := samlSP.Session.GetSession(ctx)
+		_, err := samlSP.Session.GetSession(ctx)
+		// TODO Get the user's name from the session
+		// ss, err := samlSP.Session.GetSession(ctx)
 		if err != nil {
 			return ctx.SendStatus(500)
 		}
 
-		return ctx.SendString("Hello, " + ss.NameID)
+		// TODO return the user's name
+		// return ctx.SendString("Hello, " + ss.NameID)
+		return nil
 	})
 	authMux.Post("/", CreateLink)
 	authMux.Get("/", ListLinks)
