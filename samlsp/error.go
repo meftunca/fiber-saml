@@ -5,8 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gofiber/fiber/v2"
-
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 // ErrorFunction is a callback that is invoked to return an error to the
@@ -23,5 +22,6 @@ func DefaultOnError(ctx *fiber.Ctx, err error) {
 	} else {
 		log.Printf("ERROR: %s", err)
 	}
-	http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+	// http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+	ctx.Status(http.StatusForbidden).SendString(http.StatusText(http.StatusForbidden))
 }

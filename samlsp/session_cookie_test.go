@@ -5,10 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	saml "github.com/meftunca/fiber-saml"
 	"gotest.tools/assert"
 	is "gotest.tools/assert/cmp"
-
-	"github.com/crewjam/saml"
 )
 
 func TestCookieSameSite(t *testing.T) {
@@ -36,12 +35,12 @@ func TestCookieSameSite(t *testing.T) {
 
 	t.Run("no same site", func(t *testing.T) {
 		cookie := getSessionCookie(t)
-		assert.Check(t, is.Equal(http.SameSite(0), cookie.SameSite))
+		assert.Check(t, is.Equal(string(0), cookie.SameSite))
 	})
 
 	t.Run("with same site", func(t *testing.T) {
-		csp.SameSite = http.SameSiteStrictMode
+		csp.SameSite = stringStrictMode
 		cookie := getSessionCookie(t)
-		assert.Check(t, is.Equal(http.SameSiteStrictMode, cookie.SameSite))
+		assert.Check(t, is.Equal(stringStrictMode, cookie.SameSite))
 	})
 }

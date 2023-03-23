@@ -1,17 +1,14 @@
 package samlidp
 
 import (
-	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/gofiber/fiber/v2"
+	saml "github.com/meftunca/fiber-saml"
 
 	"github.com/zenazn/goji/web"
-
-	"github.com/crewjam/saml"
 )
 
 // Service represents a configured SP for whom this IDP provides authentication services.
@@ -39,42 +36,48 @@ func (s *Server) GetServiceProvider(ctx *fiber.Ctx, serviceProviderID string) (*
 
 // HandleListServices handles the `GET /services/` request and responds with a JSON formatted list
 // of service names.
-func (s *Server) HandleListServices(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleListServices(c web.C, ctx *fiber.Ctx) error {
 	services, err := s.Store.List("/services/")
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		// return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 
-	json.NewEncoder(w).Encode(struct {
+	// json.NewEncoder(w).Encode(struct {
+	// 	Services []string `json:"services"`
+	// }{Services: services})
+	return ctx.JSON(struct {
 		Services []string `json:"services"`
 	}{Services: services})
 }
 
 // HandleGetService handles the `GET /services/:id` request and responds with the service
 // metadata in XML format.
-func (s *Server) HandleGetService(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleGetService(c web.C, ctx *fiber.Ctx) error {
 	service := Service{}
 	err := s.Store.Get(fmt.Sprintf("/services/%s", c.URLParams["id"]), &service)
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	xml.NewEncoder(w).Encode(service.Metadata)
+	// xml.NewEncoder(w).Encode(service.Metadata)
+	return ctx.XML(service.Metadata)
 }
 
 // HandlePutService handles the `PUT /shortcuts/:id` request. It accepts the XML-formatted
 // service metadata in the request body and stores it.
-func (s *Server) HandlePutService(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandlePutService(c web.C, ctx *fiber.Ctx) error {
 	service := Service{}
 
-	metadata, err := getSPMetadata(r.Body)
+	// metadata, err := getSPMetadata(r.Body)
+	metadata, err := getSPMetadata(ctx.Body())
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+		// http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
 	}
 
 	service.Metadata = *metadata
@@ -82,38 +85,39 @@ func (s *Server) HandlePutService(c web.C, ctx *fiber.Ctx) {
 	err = s.Store.Put(fmt.Sprintf("/services/%s", c.URLParams["id"]), &service)
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
 	s.idpConfigMu.Lock()
 	s.serviceProviders[service.Metadata.EntityID] = &service.Metadata
 	s.idpConfigMu.Unlock()
 
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
 }
 
 // HandleDeleteService handles the `DELETE /services/:id` request.
-func (s *Server) HandleDeleteService(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleDeleteService(c web.C, ctx *fiber.Ctx) error {
 	service := Service{}
 	err := s.Store.Get(fmt.Sprintf("/services/%s", c.URLParams["id"]), &service)
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
 	if err := s.Store.Delete(fmt.Sprintf("/services/%s", c.URLParams["id"])); err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
 	s.idpConfigMu.Lock()
 	delete(s.serviceProviders, service.Metadata.EntityID)
 	s.idpConfigMu.Unlock()
 
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }
 
 // initializeServices reads all the stored services and initializes the underlying

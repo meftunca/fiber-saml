@@ -9,10 +9,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/crewjam/httperr"
 	xrv "github.com/mattermost/xml-roundtrip-validator"
-
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 // ParseMetadata parses arbitrary SAML IDP metadata.
@@ -63,7 +61,8 @@ func FetchMetadata(ctx context.Context, httpClient *http.Client, metadataURL url
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return nil, httperr.Response(*resp)
+		// return nil, httperr.Response(*resp)
+
 	}
 
 	data, err := ioutil.ReadAll(resp.Body)

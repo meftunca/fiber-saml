@@ -11,11 +11,11 @@ import (
 	"sync"
 
 	"github.com/gofiber/fiber/v2"
+	saml "github.com/meftunca/fiber-saml"
 
 	"github.com/zenazn/goji/web"
 
-	"github.com/crewjam/saml"
-	"github.com/crewjam/saml/logger"
+	logger "github.com/meftunca/fiber-saml/logger"
 )
 
 // Options represent the parameters to New() for creating a new IDP server
@@ -90,12 +90,12 @@ func (s *Server) InitializeHTTP() {
 	mux.Get("/metadata", func(ctx *fiber.Ctx) error {
 		s.idpConfigMu.RLock()
 		defer s.idpConfigMu.RUnlock()
-		s.IDP.ServeMetadata(ctx)
+		return s.IDP.ServeMetadata(ctx)
 	})
 	mux.Handle("/sso", func(ctx *fiber.Ctx) error {
 		s.idpConfigMu.RLock()
 		defer s.idpConfigMu.RUnlock()
-		s.IDP.ServeSSO(ctx)
+		return s.IDP.ServeSSO(ctx)
 	})
 
 	mux.Handle("/login", s.HandleLogin)

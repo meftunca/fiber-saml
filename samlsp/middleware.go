@@ -5,8 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gofiber/fiber/v2"
-
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 // Middleware implements middleware than allows a web application
@@ -53,71 +52,88 @@ type Middleware struct {
 // on the URIs specified by m.ServiceProvider.MetadataURL and
 // m.ServiceProvider.AcsURL.
 func (m *Middleware) ServeHTTP(ctx *fiber.Ctx) error {
-	if r.URL.Path == m.ServiceProvider.MetadataURL.Path {
+	// if r.URL.Path == m.ServiceProvider.MetadataURL.Path {
+	if ctx.Path() == m.ServiceProvider.MetadataURL.Path {
 		m.ServeMetadata(ctx)
-		return
+		return nil
 	}
 
-	if r.URL.Path == m.ServiceProvider.AcsURL.Path {
+	// if r.URL.Path == m.ServiceProvider.AcsURL.Path {
+	if ctx.Path() == m.ServiceProvider.AcsURL.Path {
 		m.ServeACS(ctx)
-		return
+		return nil
 	}
 
-	http.NotFoundHandler().ServeHTTP(ctx)
+	// http.NotFoundHandler().ServeHTTP(ctx)
+	return ctx.Status(http.StatusNotFound).SendString("Not Found")
 }
 
 // ServeMetadata handles requests for the SAML metadata endpoint.
 func (m *Middleware) ServeMetadata(ctx *fiber.Ctx) error {
 	buf, _ := xml.MarshalIndent(m.ServiceProvider.Metadata(), "", "  ")
-	w.Header().Set("Content-Type", "application/samlmetadata+xml")
-	w.Write(buf)
-	return
+	// w.Header().Set("Content-Type", "application/samlmetadata+xml")
+	ctx.Set("Content-Type", "application/samlmetadata+xml")
+	// w.Write(buf)
+	return ctx.Send(buf)
 }
 
 // ServeACS handles requests for the SAML ACS endpoint.
 func (m *Middleware) ServeACS(ctx *fiber.Ctx) error {
-	r.ParseForm()
+	// r.ParseForm()
 
 	possibleRequestIDs := []string{}
 	if m.ServiceProvider.AllowIDPInitiated {
 		possibleRequestIDs = append(possibleRequestIDs, "")
 	}
 
-	trackedRequests := m.RequestTracker.GetTrackedRequests(r)
+	trackedRequests, err := m.RequestTracker.GetTrackedRequests(ctx)
+	if err != nil {
+		m.OnError(ctx, err)
+		return nil
+	}
 	for _, tr := range trackedRequests {
 		possibleRequestIDs = append(possibleRequestIDs, tr.SAMLRequestID)
 	}
 
-	assertion, err := m.ServiceProvider.ParseResponse(r, possibleRequestIDs)
+	assertion, err := m.ServiceProvider.ParseResponse(ctx, possibleRequestIDs)
 	if err != nil {
 		m.OnError(ctx, err)
-		return
+		return nil
 	}
 
 	m.CreateSessionFromAssertion(ctx, assertion, m.ServiceProvider.DefaultRedirectURI)
-	return
+	return nil
 }
 
 // RequireAccount is HTTP middleware that requires that each request be
 // associated with a valid session. If the request is not associated with a valid
 // session, then rather than serve the request, the middleware redirects the user
 // to start the SAML auth flow.
-func (m *Middleware) RequireAccount(handler http.Handler) http.Handler {
-	return http.HandlerFunc(func(ctx *fiber.Ctx) error {
-		session, err := m.Session.GetSession(r)
-		if session != nil {
-			r = r.WithContext(ContextWithSession(r.Context(), session))
-			handler.ServeHTTP(ctx)
-			return
-		}
-		if err == ErrNoSession {
-			m.HandleStartAuthFlow(ctx)
-			return
-		}
+// func (m *Middleware) RequireAccount(handler http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(ctx *fiber.Ctx) error {
+// 		session, err := m.Session.GetSession(ctx)
+// 		if session != nil {
+// 			r = r.WithContext(ContextWithSession(r.Context(), session))
+// 			handler.ServeHTTP(ctx)
+// 			return
+// 		}
+// 		if err == ErrNoSession {
+// 			m.HandleStartAuthFlow(ctx)
+// 			return
+// 		}
 
-		m.OnError(ctx, err)
-		return
-	})
+//			m.OnError(ctx, err)
+//			return
+//		})
+//	}
+func RequireAccount(handler fiber.Handler) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		if session := SessionFromContext(ctx.Context()); session == nil {
+			// http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return ctx.Status(http.StatusUnauthorized).SendString(http.StatusText(http.StatusUnauthorized))
+		}
+		return handler(ctx)
+	}
 }
 
 // HandleStartAuthFlow is called to start the SAML authentication process.
@@ -126,7 +142,8 @@ func (m *Middleware) HandleStartAuthFlow(ctx *fiber.Ctx) error {
 	// end up in a loop. This is a programming error, so we panic here. In
 	// general this means a 500 to the user, which is preferable to a
 	// redirect loop.
-	if r.URL.Path == m.ServiceProvider.AcsURL.Path {
+	// if r.URL.Path == m.ServiceProvider.AcsURL.Path {
+	if ctx.Path() == m.ServiceProvider.AcsURL.Path {
 		panic("don't wrap Middleware with RequireAccount")
 	}
 
@@ -145,8 +162,8 @@ func (m *Middleware) HandleStartAuthFlow(ctx *fiber.Ctx) error {
 
 	authReq, err := m.ServiceProvider.MakeAuthenticationRequest(bindingLocation, binding, m.ResponseBinding)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		// http.Error(w, err.Error(), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(err.Error())
 	}
 
 	// relayState is limited to 80 bytes but also must be integrity protected.
@@ -155,41 +172,51 @@ func (m *Middleware) HandleStartAuthFlow(ctx *fiber.Ctx) error {
 	// against the SAML response when we get it.
 	relayState, err := m.RequestTracker.TrackRequest(ctx, authReq.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		// http.Error(w, err.Error(), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(err.Error())
 	}
 
 	if binding == saml.HTTPRedirectBinding {
 		redirectURL, err := authReq.Redirect(relayState, &m.ServiceProvider)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			// http.Error(w, err.Error(), http.StatusInternalServerError)
+			return ctx.Status(http.StatusInternalServerError).SendString(err.Error())
 		}
-		w.Header().Add("Location", redirectURL.String())
-		w.WriteHeader(http.StatusFound)
-		return
+		// w.Header().Add("Location", redirectURL.String())
+		ctx.Set("Location", redirectURL.String())
+		// w.WriteHeader(http.StatusFound)
+		return ctx.Status(http.StatusFound).SendString(redirectURL.String())
+		// return nil
 	}
 	if binding == saml.HTTPPostBinding {
-		w.Header().Add("Content-Security-Policy", ""+
+		// w.Header().Add("Content-Security-Policy", ""+
+		// 	"default-src; "+
+		// 	"script-src 'sha256-AjPdJSbZmeWHnEc5ykvJFay8FTWeTeRbs9dutfZ0HqE='; "+
+		// 	"reflected-xss block; referrer no-referrer;")
+		ctx.Set("Content-Security-Policy", ""+
 			"default-src; "+
 			"script-src 'sha256-AjPdJSbZmeWHnEc5ykvJFay8FTWeTeRbs9dutfZ0HqE='; "+
 			"reflected-xss block; referrer no-referrer;")
-		w.Header().Add("Content-type", "text/html")
-		w.Write([]byte(`<!DOCTYPE html><html><body>`))
-		w.Write(authReq.Post(relayState))
-		w.Write([]byte(`</body></html>`))
-		return
+		// w.Header().Add("Content-type", "text/html")
+		ctx.Set("Content-type", "text/html")
+		// w.Write([]byte(`<!DOCTYPE html><html><body>`))
+		ctx.Write([]byte(`<!DOCTYPE html><html><body>`))
+		// w.Write(authReq.Post(relayState))
+		ctx.Write(authReq.Post(relayState))
+		// w.Write([]byte(`</body></html>`))
+		ctx.Write([]byte(`</body></html>`))
+		return nil
 	}
 	panic("not reached")
 }
 
 // CreateSessionFromAssertion is invoked by ServeHTTP when we have a new, valid SAML assertion.
 func (m *Middleware) CreateSessionFromAssertion(ctx *fiber.Ctx, assertion *saml.Assertion, redirectURI string) {
-	if trackedRequestIndex := r.Form.Get("RelayState"); trackedRequestIndex != "" {
-		trackedRequest, err := m.RequestTracker.GetTrackedRequest(r, trackedRequestIndex)
+	if trackedRequestIndex := ctx.FormValue("RelayState"); trackedRequestIndex != "" {
+		trackedRequest, err := m.RequestTracker.GetTrackedRequest(ctx, trackedRequestIndex)
 		if err != nil {
 			if err == http.ErrNoCookie && m.ServiceProvider.AllowIDPInitiated {
-				if uri := r.Form.Get("RelayState"); uri != "" {
+				if uri := ctx.FormValue("RelayState"); uri != "" {
 					redirectURI = uri
 				}
 			} else {
@@ -208,7 +235,8 @@ func (m *Middleware) CreateSessionFromAssertion(ctx *fiber.Ctx, assertion *saml.
 		return
 	}
 
-	http.Redirect(ctx, redirectURI, http.StatusFound)
+	// http.Redirect(ctx, redirectURI, http.StatusFound)
+	ctx.Redirect(redirectURI, http.StatusFound)
 }
 
 // RequireAttribute returns a middleware function that requires that the
@@ -220,23 +248,41 @@ func (m *Middleware) CreateSessionFromAssertion(ctx *fiber.Ctx, assertion *saml.
 //
 //	goji.Use(m.RequireAccount)
 //	goji.Use(RequireAttributeMiddleware("eduPersonAffiliation", "Staff"))
-func RequireAttribute(name, value string) func(http.Handler) http.Handler {
-	return func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(ctx *fiber.Ctx) error {
-			if session := SessionFromContext(r.Context()); session != nil {
-				// this will panic if we have the wrong type of Session, and that is OK.
-				sessionWithAttributes := session.(SessionWithAttributes)
-				attributes := sessionWithAttributes.GetAttributes()
-				if values, ok := attributes[name]; ok {
-					for _, v := range values {
-						if v == value {
-							handler.ServeHTTP(ctx)
-							return
-						}
+// func RequireAttribute(name, value string) func(http.Handler) http.Handler {
+// 	return func(handler http.Handler) http.Handler {
+// 		return http.HandlerFunc(func(ctx *fiber.Ctx) error {
+// 			if session := SessionFromContext(r.Context()); session != nil {
+// 				// this will panic if we have the wrong type of Session, and that is OK.
+// 				sessionWithAttributes := session.(SessionWithAttributes)
+// 				attributes := sessionWithAttributes.GetAttributes()
+// 				if values, ok := attributes[name]; ok {
+// 					for _, v := range values {
+// 						if v == value {
+// 							handler.ServeHTTP(ctx)
+// 							return
+// 						}
+// 					}
+// 				}
+// 			}
+// 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+// 		})
+// 	}
+// }
+
+func RequireAttribute(name, value string) func(ctx *fiber.Ctx) error {
+	return func(ctx *fiber.Ctx) error {
+		if session := SessionFromContext(ctx.Context()); session != nil {
+			// this will panic if we have the wrong type of Session, and that is OK.
+			sessionWithAttributes := session.(SessionWithAttributes)
+			attributes := sessionWithAttributes.GetAttributes()
+			if values, ok := attributes[name]; ok {
+				for _, v := range values {
+					if v == value {
+						return ctx.Next()
 					}
 				}
 			}
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
-		})
+		}
+		return ctx.Status(http.StatusForbidden).SendString(http.StatusText(http.StatusForbidden))
 	}
 }

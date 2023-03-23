@@ -10,7 +10,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -27,8 +26,8 @@ import (
 	xrv "github.com/mattermost/xml-roundtrip-validator"
 	dsig "github.com/russellhaering/goxmldsig"
 
-	"github.com/crewjam/saml/logger"
-	"github.com/crewjam/saml/xmlenc"
+	logger "github.com/meftunca/fiber-saml/logger"
+	xmlenc "github.com/meftunca/fiber-saml/xmlenc"
 )
 
 // Session represents a user session. It is returned by the
@@ -260,7 +259,7 @@ func (idp *IdentityProvider) ServeSSO(ctx *fiber.Ctx) error {
 		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
-	if err := req.WriteResponse(w); err != nil {
+	if err := req.WriteResponse(); err != nil {
 		idp.Logger.Printf("failed to write response: %s", err)
 		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
@@ -271,10 +270,10 @@ func (idp *IdentityProvider) ServeSSO(ctx *fiber.Ctx) error {
 // ServeIDPInitiated handes an IDP-initiated authorization request. Requests of this
 // type require us to know a registered service provider and (optionally) the RelayState
 // that will be passed to the application.
-func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID string, relayState string) {
+func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID string, relayState string) error {
 	req := &IdpAuthnRequest{
 		IDP:         idp,
-		HTTPRequest: r,
+		HTTPRequest: ctx,
 		RelayState:  relayState,
 		Now:         TimeNow(),
 	}
@@ -283,19 +282,19 @@ func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID
 	if session == nil {
 		// If GetSession returns nil, it must have written an HTTP response, per the interface
 		// (this is probably because it drew a login form or something)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 
 	var err error
-	req.ServiceProviderMetadata, err = idp.ServiceProviderProvider.GetServiceProvider(r, serviceProviderID)
+	req.ServiceProviderMetadata, err = idp.ServiceProviderProvider.GetServiceProvider(ctx, serviceProviderID)
 	if err == os.ErrNotExist {
 		idp.Logger.Printf("cannot find service provider: %s", serviceProviderID)
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
+		// http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return ctx.Status(http.StatusNotFound).SendString(http.StatusText(http.StatusNotFound))
 	} else if err != nil {
 		idp.Logger.Printf("cannot find service provider %s: %v", serviceProviderID, err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 
 	// find an ACS endpoint that we can use
@@ -321,8 +320,8 @@ func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID
 	}
 	if req.ACSEndpoint == nil {
 		idp.Logger.Printf("saml metadata does not contain an Assertion Customer Service url")
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 
 	assertionMaker := idp.AssertionMaker
@@ -331,21 +330,22 @@ func (idp *IdentityProvider) ServeIDPInitiated(ctx *fiber.Ctx, serviceProviderID
 	}
 	if err := assertionMaker.MakeAssertion(req, session); err != nil {
 		idp.Logger.Printf("failed to make assertion: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
 
-	if err := req.WriteResponse(w); err != nil {
+	if err := req.WriteResponse(); err != nil {
 		idp.Logger.Printf("failed to write response: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 	}
+	return nil
 }
 
 // IdpAuthnRequest is used by IdentityProvider to handle a single authentication request.
 type IdpAuthnRequest struct {
 	IDP                     *IdentityProvider
-	HTTPRequest             *fiber.Request
+	HTTPRequest             *fiber.Ctx
 	RelayState              string
 	RequestBuffer           []byte
 	Request                 AuthnRequest
@@ -363,7 +363,7 @@ type IdpAuthnRequest struct {
 func NewIdpAuthnRequest(idp *IdentityProvider, ctx *fiber.Ctx) (*IdpAuthnRequest, error) {
 	req := &IdpAuthnRequest{
 		IDP:         idp,
-		HTTPRequest: ctx.Request(),
+		HTTPRequest: ctx,
 		Now:         TimeNow(),
 	}
 
@@ -796,7 +796,8 @@ func (DefaultAssertionMaker) MakeAssertion(req *IdpAuthnRequest, session *Sessio
 				{
 					Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
 					SubjectConfirmationData: &SubjectConfirmationData{
-						Address:      req.HTTPRequest.RemoteAddr,
+						// Address:      req.HTTPRequest.RemoteAddr,
+						Address:      req.HTTPRequest.IP(),
 						InResponseTo: req.Request.ID,
 						NotOnOrAfter: req.Now.Add(MaxIssueDelay),
 						Recipient:    req.ACSEndpoint.Location,
@@ -818,7 +819,9 @@ func (DefaultAssertionMaker) MakeAssertion(req *IdpAuthnRequest, session *Sessio
 				AuthnInstant: session.CreateTime,
 				SessionIndex: session.Index,
 				SubjectLocality: &SubjectLocality{
-					Address: req.HTTPRequest.RemoteAddr,
+					// Address: req.HTTPRequest.RemoteAddr,
+					// Get fiber context remote address
+					Address: req.HTTPRequest.IP(),
 				},
 				AuthnContext: AuthnContext{
 					AuthnContextClassRef: &AuthnContextClassRef{
@@ -951,7 +954,7 @@ func (req *IdpAuthnRequest) PostBinding() (IdpAuthnRequestForm, error) {
 
 // WriteResponse writes the `Response` to the http.ResponseWriter. If
 // `Response` is not already set, it calls MakeResponse to produce it.
-func (req *IdpAuthnRequest) WriteResponse(w http.ResponseWriter) error {
+func (req *IdpAuthnRequest) WriteResponse() error {
 	form, err := req.PostBinding()
 	if err != nil {
 		return err
@@ -971,10 +974,7 @@ func (req *IdpAuthnRequest) WriteResponse(w http.ResponseWriter) error {
 	if err := tmpl.Execute(buf, form); err != nil {
 		return err
 	}
-	if _, err := io.Copy(w, buf); err != nil {
-		return err
-	}
-	return nil
+	return req.HTTPRequest.Send(buf.Bytes())
 }
 
 // getSPEncryptionCert returns the certificate which we can use to encrypt things

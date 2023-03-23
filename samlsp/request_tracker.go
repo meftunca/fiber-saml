@@ -23,7 +23,7 @@ type RequestTracker interface {
 	StopTrackingRequest(ctx *fiber.Ctx, index string) error
 
 	// GetTrackedRequests returns all the pending tracked requests
-	GetTrackedRequests(ctx *fiber.Ctx) error []TrackedRequest
+	GetTrackedRequests(ctx *fiber.Ctx) ([]TrackedRequest, error)
 
 	// GetTrackedRequest returns a pending tracked request.
 	GetTrackedRequest(ctx *fiber.Ctx, index string) (*TrackedRequest, error)

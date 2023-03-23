@@ -9,7 +9,6 @@ import (
 	"crypto/x509"
 	"encoding/xml"
 	"flag"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,11 +16,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/dchest/uniuri"
-	"github.com/kr/pretty"
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/web"
 
-	"github.com/crewjam/saml/samlsp"
+	samlsp "github.com/meftunca/fiber-saml/samlsp"
 )
 
 var links = map[string]Link{}
@@ -34,38 +32,46 @@ type Link struct {
 }
 
 // CreateLink handles requests to create links
-func CreateLink(c web.C, ctx *fiber.Ctx) {
-	account := r.Header.Get("X-Remote-User")
+func CreateLink(c web.C, ctx *fiber.Ctx) error {
+	// account := r.Header.Get("X-Remote-User")
+	account := ctx.Get("X-Remote-User")
 	l := Link{
 		ShortLink: uniuri.New(),
-		Target:    r.FormValue("t"),
-		Owner:     account,
+		// Target:    r.FormValue("t"),
+		Target: ctx.FormValue("t"),
+		Owner:  account,
 	}
 	links[l.ShortLink] = l
 
-	fmt.Fprintf(w, "%s\n", l.ShortLink)
-	return
+	// fmt.Fprintf(w, "%s\n", l.ShortLink)
+	return ctx.SendString(l.ShortLink)
 }
 
 // ServeLink handles requests to redirect to a link
-func ServeLink(c web.C, ctx *fiber.Ctx) {
-	l, ok := links[strings.TrimPrefix(r.URL.Path, "/")]
-	if !ok {
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
+func ServeLink(c web.C, ctx *fiber.Ctx) error {
+	// l, ok := links[strings.TrimPrefix(r.URL.Path, "/")]
+	l, isOk := links[strings.TrimPrefix(ctx.Path(), "/")]
+	if !isOk {
+		// http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		// return
+		return ctx.Status(http.StatusNotFound).SendString(http.StatusText(http.StatusNotFound))
 	}
-	http.Redirect(ctx, l.Target, http.StatusFound)
-	return
+	// http.Redirect(ctx, l.Target, http.StatusFound)
+	// return
+	return ctx.Redirect(l.Target, http.StatusFound)
 }
 
 // ListLinks returns a list of the current user's links
-func ListLinks(c web.C, ctx *fiber.Ctx) {
-	account := r.Header.Get("X-Remote-User")
+func ListLinks(c web.C, ctx *fiber.Ctx) error {
+	// account := r.Header.Get("X-Remote-User")
+	account := ctx.Get("X-Remote-User")
 	for _, l := range links {
 		if l.Owner == account {
-			fmt.Fprintf(w, "%s\n", l.ShortLink)
+			// fmt.Fprintf(w, "%s\n", l.ShortLink)
+			ctx.SendString(l.ShortLink)
 		}
 	}
+	return nil
 }
 
 var (
@@ -154,7 +160,13 @@ func main() {
 	authMux := web.New()
 	authMux.Use(samlSP.RequireAccount)
 	authMux.Get("/whoami", func(ctx *fiber.Ctx) error {
-		pretty.Fprintf(w, "%# v", r)
+		// pretty.Fprintf(w, "%# v", r)
+		ss, err := samlSP.Session.GetSession(ctx)
+		if err != nil {
+			return ctx.SendStatus(500)
+		}
+
+		return ctx.SendString("Hello, " + ss.NameID)
 	})
 	authMux.Post("/", CreateLink)
 	authMux.Get("/", ListLinks)

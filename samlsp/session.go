@@ -6,7 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 // Session is an interface implemented to contain a session.
@@ -32,11 +32,11 @@ type SessionProvider interface {
 
 	// DeleteSession is called to modify the response such that it removed the current
 	// session, e.g. by deleting a cookie.
-	DeleteSession(ctx *fiber.Ctx) error error
+	DeleteSession(ctx *fiber.Ctx) error
 
 	// GetSession returns the current Session associated with the request, or
 	// ErrNoSession if there is no valid session.
-	GetSession(ctx *fiber.Ctx) error (Session, error)
+	GetSession(ctx *fiber.Ctx) (Session, error)
 }
 
 // SessionCodec is an interface to convert SAML assertions to a

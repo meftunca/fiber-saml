@@ -8,10 +8,9 @@ import (
 	"net/url"
 
 	"github.com/gofiber/fiber/v2"
+	saml "github.com/meftunca/fiber-saml"
 
 	dsig "github.com/russellhaering/goxmldsig"
-
-	"github.com/crewjam/saml"
 )
 
 // Options represents the parameters for creating a new middleware
@@ -29,9 +28,9 @@ type Options struct {
 	UseArtifactResponse   bool
 	ForceAuthn            bool // TODO(ross): this should be *bool
 	RequestedAuthnContext *saml.RequestedAuthnContext
-	CookieSameSite        http.SameSite
+	CookieSameSite        string
 	CookieName            string
-	RelayStateFunc        func(ctx *fiber.Ctx) error string
+	RelayStateFunc        func(ctx *fiber.Ctx) string
 	LogoutBindings        []string
 }
 

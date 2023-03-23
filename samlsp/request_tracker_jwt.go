@@ -6,8 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 var defaultJWTSigningMethod = jwt.SigningMethodRS256

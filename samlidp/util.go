@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
-	"io"
-	"io/ioutil"
 
 	xrv "github.com/mattermost/xml-roundtrip-validator"
-
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 func randomBytes(n int) []byte {
@@ -20,11 +17,7 @@ func randomBytes(n int) []byte {
 	return rv
 }
 
-func getSPMetadata(r io.Reader) (spMetadata *saml.EntityDescriptor, err error) {
-	var data []byte
-	if data, err = ioutil.ReadAll(r); err != nil {
-		return nil, err
-	}
+func getSPMetadata(data []byte) (spMetadata *saml.EntityDescriptor, err error) {
 
 	spMetadata = &saml.EntityDescriptor{}
 	if err := xrv.Validate(bytes.NewBuffer(data)); err != nil {

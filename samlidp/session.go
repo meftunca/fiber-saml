@@ -3,19 +3,17 @@ package samlidp
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"text/template"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	saml "github.com/meftunca/fiber-saml"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/zenazn/goji/web"
-
-	"github.com/crewjam/saml"
 )
 
 var sessionMaxAge = time.Hour
@@ -37,14 +35,14 @@ var sessionMaxAge = time.Hour
 // sends a login form and returns nil.
 func (s *Server) GetSession(ctx *fiber.Ctx, req *saml.IdpAuthnRequest) *saml.Session {
 	// if we received login credentials then maybe we can create a session
-	if r.Method == "POST" && r.PostForm.Get("user") != "" {
+	if ctx.Method() == "POST" && ctx.FormValue("user") != "" {
 		user := User{}
-		if err := s.Store.Get(fmt.Sprintf("/users/%s", r.PostForm.Get("user")), &user); err != nil {
+		if err := s.Store.Get(fmt.Sprintf("/users/%s", ctx.FormValue("user")), &user); err != nil {
 			s.sendLoginForm(ctx, req, "Invalid username or password")
 			return nil
 		}
 
-		if err := bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(r.PostForm.Get("password"))); err != nil {
+		if err := bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(ctx.FormValue("password"))); err != nil {
 			s.sendLoginForm(ctx, req, "Invalid username or password")
 			return nil
 		}
@@ -64,29 +62,33 @@ func (s *Server) GetSession(ctx *fiber.Ctx, req *saml.IdpAuthnRequest) *saml.Ses
 			UserScopedAffiliation: user.ScopedAffiliation,
 		}
 		if err := s.Store.Put(fmt.Sprintf("/sessions/%s", session.ID), &session); err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 			return nil
 		}
 
-		http.SetCookie(w, &http.Cookie{
+		ctx.Cookie(&fiber.Cookie{
 			Name:     "session",
 			Value:    session.ID,
 			MaxAge:   int(sessionMaxAge.Seconds()),
-			HttpOnly: true,
-			Secure:   r.URL.Scheme == "https",
+			HTTPOnly: true,
+			Secure:   ctx.Secure(),
 			Path:     "/",
 		})
+
 		return session
 	}
 
-	if sessionCookie, err := r.Cookie("session"); err == nil {
+	// if sessionCookie, err := r.Cookie("session"); err == nil {
+	if sessionCookie := ctx.Cookies("session"); sessionCookie != "" {
 		session := &saml.Session{}
-		if err := s.Store.Get(fmt.Sprintf("/sessions/%s", sessionCookie.Value), session); err != nil {
+		// if err := s.Store.Get(fmt.Sprintf("/sessions/%s", sessionCookie.Value), session); err != nil {
+		if err := s.Store.Get(fmt.Sprintf("/sessions/%s", sessionCookie), session); err != nil {
 			if err == ErrNotFound {
 				s.sendLoginForm(ctx, req, "")
 				return nil
 			}
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 			return nil
 		}
 
@@ -128,7 +130,8 @@ func (s *Server) sendLoginForm(ctx *fiber.Ctx, req *saml.IdpAuthnRequest, toast 
 		RelayState:  req.RelayState,
 	}
 
-	if err := tmpl.Execute(w, data); err != nil {
+	// if err := tmpl.Execute(w, data); err != nil {
+	if err := tmpl.Execute(ctx, data); err != nil {
 		panic(err)
 	}
 }
@@ -137,51 +140,58 @@ func (s *Server) sendLoginForm(ctx *fiber.Ctx, req *saml.IdpAuthnRequest, toast 
 // in the request body, then they are validated. For valid credentials, the response is a
 // 200 OK and the JSON session object. For invalid credentials, the HTML login prompt form
 // is sent.
-func (s *Server) HandleLogin(c web.C, ctx *fiber.Ctx) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+func (s *Server) HandleLogin(c web.C, ctx *fiber.Ctx) error {
+	// if err := r.ParseForm(); err != nil {
+	if string(ctx.Body()) == "" {
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
+
 	}
 	session := s.GetSession(ctx, &saml.IdpAuthnRequest{IDP: &s.IDP})
 	if session == nil {
-		return
+		return ctx.Status(http.StatusUnauthorized).SendString(http.StatusText(http.StatusUnauthorized))
 	}
-	json.NewEncoder(w).Encode(session)
+	// json.NewEncoder(w).Encode(session)
+	return ctx.JSON(session)
 }
 
 // HandleListSessions handles the `GET /sessions/` request and responds with a JSON formatted list
 // of session names.
-func (s *Server) HandleListSessions(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleListSessions(c web.C, ctx *fiber.Ctx) error {
 	sessions, err := s.Store.List("/sessions/")
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
-	json.NewEncoder(w).Encode(struct {
+	// json.NewEncoder(w).Encode(struct {
+	// 	Sessions []string `json:"sessions"`
+	// }{Sessions: sessions})
+	return ctx.JSON(struct {
 		Sessions []string `json:"sessions"`
 	}{Sessions: sessions})
 }
 
 // HandleGetSession handles the `GET /sessions/:id` request and responds with the session
 // object in JSON format.
-func (s *Server) HandleGetSession(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleGetSession(c web.C, ctx *fiber.Ctx) error {
 	session := saml.Session{}
 	err := s.Store.Get(fmt.Sprintf("/sessions/%s", c.URLParams["id"]), &session)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	json.NewEncoder(w).Encode(session)
+	// json.NewEncoder(w).Encode(session)
+	return ctx.JSON(session)
 }
 
 // HandleDeleteSession handles the `DELETE /sessions/:id` request. It invalidates the
 // specified session.
-func (s *Server) HandleDeleteSession(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleDeleteSession(c web.C, ctx *fiber.Ctx) error {
 	err := s.Store.Delete(fmt.Sprintf("/sessions/%s", c.URLParams["id"]))
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }

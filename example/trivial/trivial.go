@@ -12,17 +12,19 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/crewjam/saml/samlsp"
+	samlsp "github.com/meftunca/fiber-saml/samlsp"
 )
 
 var samlMiddleware *samlsp.Middleware
 
 func hello(ctx *fiber.Ctx) error {
-	fmt.Fprintf(w, "Hello, %s!", samlsp.AttributeFromContext(r.Context(), "displayName"))
+	// fmt.Fprintf(w, "Hello, %s!", samlsp.AttributeFromContext(r.Context(), "displayName"))
+	return ctx.SendString(fmt.Sprintf("Hello, %s!", samlsp.AttributeFromContext(ctx.Context(), "displayName")))
 }
 
 func logout(ctx *fiber.Ctx) error {
-	nameID := samlsp.AttributeFromContext(r.Context(), "urn:oasis:names:tc:SAML:attribute:subject-id")
+	// nameID := samlsp.AttributeFromContext(r.Context(), "urn:oasis:names:tc:SAML:attribute:subject-id")
+	nameID := samlsp.AttributeFromContext(ctx.Context(), "urn:oasis:names:tc:SAML:attribute:subject-id")
 	url, err := samlMiddleware.ServiceProvider.MakeRedirectLogoutRequest(nameID, "")
 	if err != nil {
 		panic(err) // TODO handle error
@@ -33,8 +35,10 @@ func logout(ctx *fiber.Ctx) error {
 		panic(err) // TODO handle error
 	}
 
-	w.Header().Add("Location", url.String())
-	w.WriteHeader(http.StatusFound)
+	// w.Header().Add("Location", url.String())
+	ctx.Set("Location", url.String())
+	// w.WriteHeader(http.StatusFound)
+	return ctx.Status(http.StatusFound).SendString(http.StatusText(http.StatusFound))
 }
 
 func main() {
@@ -69,10 +73,9 @@ func main() {
 		IDPMetadata: idpMetadata,
 		SignRequest: true, // some IdP require the SLO request to be signed
 	})
-	app := http.HandlerFunc(hello)
-	slo := http.HandlerFunc(logout)
-	http.Handle("/hello", samlMiddleware.RequireAccount(app))
-	http.Handle("/saml/", samlMiddleware)
-	http.Handle("/logout", slo)
+	router := fiber.New()
+	router.Get("/hello", samlMiddleware.RequireAccount(hello))
+	router.All("/saml/", samlMiddleware.HandleStartAuthFlow)
+	router.All("/logout", logout)
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }

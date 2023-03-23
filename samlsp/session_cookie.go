@@ -2,12 +2,11 @@ package samlsp
 
 import (
 	"net"
-	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 
-	"github.com/crewjam/saml"
+	saml "github.com/meftunca/fiber-saml"
 )
 
 const defaultSessionCookieName = "token"
@@ -21,7 +20,7 @@ type CookieSessionProvider struct {
 	Domain   string
 	HTTPOnly bool
 	Secure   bool
-	SameSite http.SameSite
+	SameSite string
 	MaxAge   time.Duration
 	Codec    SessionCodec
 }
@@ -45,55 +44,75 @@ func (c CookieSessionProvider) CreateSession(ctx *fiber.Ctx, assertion *saml.Ass
 		return err
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	// ctx.Cookie( &fiber.Cookie{
+	// 	Name:     c.Name,
+	// 	Domain:   c.Domain,
+	// 	Value:    value,
+	// 	MaxAge:   int(c.MaxAge.Seconds()),
+	// 	HTTPOnly: c.HTTPOnly,
+	// 	Secure:   c.Secure || ctx.Secure(),
+	// 	SameSite: c.SameSite,
+	// 	Path:     "/",
+	// })
+	cookie := &fiber.Cookie{
 		Name:     c.Name,
 		Domain:   c.Domain,
 		Value:    value,
 		MaxAge:   int(c.MaxAge.Seconds()),
-		HttpOnly: c.HTTPOnly,
-		Secure:   c.Secure || r.URL.Scheme == "https",
+		HTTPOnly: c.HTTPOnly,
+		Secure:   c.Secure || ctx.Secure(),
 		SameSite: c.SameSite,
 		Path:     "/",
-	})
+	}
+	ctx.Cookie(cookie)
 	return nil
 }
 
 // DeleteSession is called to modify the response such that it removed the current
 // session, e.g. by deleting a cookie.
-func (c CookieSessionProvider) DeleteSession(ctx *fiber.Ctx) error error {
+func (c CookieSessionProvider) DeleteSession(ctx *fiber.Ctx) error {
 	// Cookies should not have the port attached to them so strip it off
 	if domain, _, err := net.SplitHostPort(c.Domain); err == nil {
 		c.Domain = domain
 	}
 
-	cookie, err := r.Cookie(c.Name)
+	// cookie, err := r.Cookie(c.Name)
+	cookie := ctx.Cookies(c.Name)
 
-	if err == http.ErrNoCookie {
+	if len(cookie) == 0 {
 		return nil
 	}
-	if err != nil {
-		return err
+	newCookie := &fiber.Cookie{
+		Name:     c.Name,
+		Domain:   c.Domain,
+		Value:    "",
+		MaxAge:   -1,
+		HTTPOnly: c.HTTPOnly,
+		Expires:  time.Unix(1, 0), // past time as close to epoch as possible, but not zero time.Time{}
+		Secure:   c.Secure || ctx.Secure(),
+		SameSite: c.SameSite,
+		Path:     "/",
 	}
-
-	cookie.Value = ""
-	cookie.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
-	cookie.Path = "/"
-	cookie.Domain = c.Domain
-	http.SetCookie(w, cookie)
+	// cookie.Value = ""
+	// cookie.Expires = time.Unix(1, 0) // past time as close to epoch as possible, but not zero time.Time{}
+	// cookie.Path = "/"
+	// cookie.Domain = c.Domain
+	// http.SetCookie(w, cookie)
+	// Set the cookie
+	ctx.Cookie(newCookie)
 	return nil
 }
 
 // GetSession returns the current Session associated with the request, or
 // ErrNoSession if there is no valid session.
-func (c CookieSessionProvider) GetSession(ctx *fiber.Ctx) error (Session, error) {
-	cookie, err := r.Cookie(c.Name)
-	if err == http.ErrNoCookie {
+func (c CookieSessionProvider) GetSession(ctx *fiber.Ctx) (Session, error) {
+	// cookie, err := r.Cookie(c.Name)
+	cookie := ctx.Cookies(c.Name)
+	if len(cookie) == 0 {
 		return nil, ErrNoSession
-	} else if err != nil {
-		return nil, err
 	}
 
-	session, err := c.Codec.Decode(cookie.Value)
+	session, err := c.Codec.Decode(cookie)
 	if err != nil {
 		return nil, ErrNoSession
 	}

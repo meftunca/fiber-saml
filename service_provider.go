@@ -19,11 +19,12 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
+	"github.com/gofiber/fiber/v2"
 	xrv "github.com/mattermost/xml-roundtrip-validator"
 	dsig "github.com/russellhaering/goxmldsig"
 	"github.com/russellhaering/goxmldsig/etreeutils"
 
-	"github.com/crewjam/saml/xmlenc"
+	xmlenc "github.com/meftunca/fiber-saml/xmlenc"
 )
 
 // NameIDFormat is the format of the id
@@ -594,11 +595,12 @@ func (e ErrBadStatus) Error() string {
 
 // ParseResponse extracts the SAML IDP response received in req, resolves
 // artifacts when necessary, validates it, and returns the verified assertion.
-func (sp *ServiceProvider) ParseResponse(req *http.Request, possibleRequestIDs []string) (*Assertion, error) {
-	if artifactID := req.Form.Get("SAMLart"); artifactID != "" {
-		return sp.handleArtifactRequest(req.Context(), artifactID, possibleRequestIDs)
+func (sp *ServiceProvider) ParseResponse(ctx *fiber.Ctx, possibleRequestIDs []string) (*Assertion, error) {
+	// if artifactID := req.Form.Get("SAMLart"); artifactID != "" {
+	if artifactID := ctx.Query("SAMLart"); artifactID != "" {
+		return sp.handleArtifactRequest(ctx.Context(), artifactID, possibleRequestIDs)
 	}
-	return sp.parseResponseHTTP(req, possibleRequestIDs)
+	return sp.parseResponseHTTP(ctx, possibleRequestIDs)
 }
 
 func (sp *ServiceProvider) handleArtifactRequest(ctx context.Context, artifactID string, possibleRequestIDs []string) (*Assertion, error) {
@@ -650,12 +652,13 @@ func (sp *ServiceProvider) handleArtifactRequest(ctx context.Context, artifactID
 	return assertion, nil
 }
 
-func (sp *ServiceProvider) parseResponseHTTP(req *http.Request, possibleRequestIDs []string) (*Assertion, error) {
+func (sp *ServiceProvider) parseResponseHTTP(ctx *fiber.Ctx, possibleRequestIDs []string) (*Assertion, error) {
 	retErr := &InvalidResponseError{
 		Now: TimeNow(),
 	}
 
-	rawResponseBuf, err := base64.StdEncoding.DecodeString(req.PostForm.Get("SAMLResponse"))
+	// rawResponseBuf, err := base64.StdEncoding.DecodeString(req.PostForm.Get("SAMLResponse"))
+	rawResponseBuf, err := base64.StdEncoding.DecodeString(ctx.Query("SAMLResponse"))
 	if err != nil {
 		retErr.PrivateErr = fmt.Errorf("cannot parse base64: %s", err)
 		return nil, retErr

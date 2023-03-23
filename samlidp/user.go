@@ -27,43 +27,50 @@ type User struct {
 
 // HandleListUsers handles the `GET /users/` request and responds with a JSON formatted list
 // of user names.
-func (s *Server) HandleListUsers(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleListUsers(c web.C, ctx *fiber.Ctx) error {
 	users, err := s.Store.List("/users/")
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
-	json.NewEncoder(w).Encode(struct {
-		Users []string `json:"users"`
-	}{Users: users})
+	// json.NewEncoder(w).Encode(struct {
+	// 	Users []string `json:"users"`
+	// }{Users: users})
+	return ctx.JSON(
+		fiber.Map{
+			"users": users,
+		},
+	)
 }
 
 // HandleGetUser handles the `GET /users/:id` request and responds with the user object in JSON
 // format. The HashedPassword field is excluded.
-func (s *Server) HandleGetUser(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleGetUser(c web.C, ctx *fiber.Ctx) error {
 	user := User{}
 	err := s.Store.Get(fmt.Sprintf("/users/%s", c.URLParams["id"]), &user)
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 	user.HashedPassword = nil
-	json.NewEncoder(w).Encode(user)
+	// json.NewEncoder(w).Encode(user)
+	return ctx.JSON(user)
 }
 
 // HandlePutUser handles the `PUT /users/:id` request. It accepts a JSON formatted user object in
 // the request body and stores it. If the PlaintextPassword field is present then it is hashed
 // and stored in HashedPassword. If the PlaintextPassword field is not present then
 // HashedPassword retains it's stored value.
-func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) error {
 	user := User{}
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	// if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+	if err := json.Unmarshal(ctx.Body(), &user); err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
+
 	}
 	user.Name = c.URLParams["id"]
 
@@ -72,8 +79,8 @@ func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) {
 		user.HashedPassword, err = bcrypt.GenerateFromPassword([]byte(*user.PlaintextPassword), bcrypt.DefaultCost)
 		if err != nil {
 			s.logger.Printf("ERROR: %s", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+			// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 		}
 	} else {
 		existingUser := User{}
@@ -85,8 +92,8 @@ func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) {
 			// nop
 		default:
 			s.logger.Printf("ERROR: %s", err)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+			// http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
 		}
 	}
 	user.PlaintextPassword = nil
@@ -94,19 +101,21 @@ func (s *Server) HandlePutUser(c web.C, ctx *fiber.Ctx) {
 	err := s.Store.Put(fmt.Sprintf("/users/%s", c.URLParams["id"]), &user)
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }
 
 // HandleDeleteUser handles the `DELETE /users/:id` request.
-func (s *Server) HandleDeleteUser(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleDeleteUser(c web.C, ctx *fiber.Ctx) error {
 	err := s.Store.Delete(fmt.Sprintf("/users/%s", c.URLParams["id"]))
 	if err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }

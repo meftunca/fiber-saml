@@ -33,68 +33,78 @@ type Shortcut struct {
 
 // HandleListShortcuts handles the `GET /shortcuts/` request and responds with a JSON formatted list
 // of shortcut names.
-func (s *Server) HandleListShortcuts(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleListShortcuts(c web.C, ctx *fiber.Ctx) error {
 	shortcuts, err := s.Store.List("/shortcuts/")
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
-	json.NewEncoder(w).Encode(struct {
-		Shortcuts []string `json:"shortcuts"`
-	}{Shortcuts: shortcuts})
+	// json.NewEncoder(w).Encode(struct {
+	// 	Shortcuts []string `json:"shortcuts"`
+	// }{Shortcuts: shortcuts})
+	return ctx.JSON(
+		fiber.Map{
+			"shortcuts": shortcuts,
+		},
+	)
 }
 
 // HandleGetShortcut handles the `GET /shortcuts/:id` request and responds with the shortcut
 // object in JSON format.
-func (s *Server) HandleGetShortcut(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleGetShortcut(c web.C, ctx *fiber.Ctx) error {
 	shortcut := Shortcut{}
 	err := s.Store.Get(fmt.Sprintf("/shortcuts/%s", c.URLParams["id"]), &shortcut)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	json.NewEncoder(w).Encode(shortcut)
+	// json.NewEncoder(w).Encode(shortcut)
+	return ctx.JSON(shortcut)
 }
 
 // HandlePutShortcut handles the `PUT /shortcuts/:id` request. It accepts a JSON formatted
 // shortcut object in the request body and stores it.
-func (s *Server) HandlePutShortcut(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandlePutShortcut(c web.C, ctx *fiber.Ctx) error {
 	shortcut := Shortcut{}
-	if err := json.NewDecoder(r.Body).Decode(&shortcut); err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		return
+	// if err := json.NewDecoder(r.Body).Decode(&shortcut); err != nil {
+	// 	return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
+	// }
+	if err := json.Unmarshal(ctx.Body(), &shortcut); err != nil {
+		return ctx.Status(http.StatusBadRequest).SendString(http.StatusText(http.StatusBadRequest))
 	}
 	shortcut.Name = c.URLParams["id"]
 
 	err := s.Store.Put(fmt.Sprintf("/shortcuts/%s", c.URLParams["id"]), &shortcut)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }
 
 // HandleDeleteShortcut handles the `DELETE /shortcuts/:id` request.
-func (s *Server) HandleDeleteShortcut(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleDeleteShortcut(c web.C, ctx *fiber.Ctx) error {
 	err := s.Store.Delete(fmt.Sprintf("/shortcuts/%s", c.URLParams["id"]))
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return ctx.Status(http.StatusNoContent).SendString(http.StatusText(http.StatusNoContent))
+
 }
 
 // HandleIDPInitiated handles a request for an IDP initiated login flow. It looks up
 // the specified shortcut, generates the appropriate SAML assertion and redirects the
 // user via the HTTP-POST binding to the service providers ACS URL.
-func (s *Server) HandleIDPInitiated(c web.C, ctx *fiber.Ctx) {
+func (s *Server) HandleIDPInitiated(c web.C, ctx *fiber.Ctx) error {
 	shortcutName := c.URLParams["shortcut"]
 	shortcut := Shortcut{}
 	if err := s.Store.Get(fmt.Sprintf("/shortcuts/%s", shortcutName), &shortcut); err != nil {
 		s.logger.Printf("ERROR: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
+		return ctx.Status(http.StatusInternalServerError).SendString(http.StatusText(http.StatusInternalServerError))
+
 	}
 
 	relayState := ""
@@ -107,5 +117,5 @@ func (s *Server) HandleIDPInitiated(c web.C, ctx *fiber.Ctx) {
 
 	s.idpConfigMu.RLock()
 	defer s.idpConfigMu.RUnlock()
-	s.IDP.ServeIDPInitiated(ctx, shortcut.ServiceProviderID, relayState)
+	return s.IDP.ServeIDPInitiated(ctx, shortcut.ServiceProviderID, relayState)
 }
