@@ -16,7 +16,7 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/russellhaering/goxmldsig v1.3.0
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/valyala/fasthttp v1.45.0 // indirect
 	github.com/zenazn/goji v1.0.1
