@@ -20,6 +20,6 @@ require (
 	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/valyala/fasthttp v1.45.0 // indirect
 	github.com/zenazn/goji v1.0.1
-	golang.org/x/crypto v0.7.0
+	golang.org/x/crypto v0.8.0
 	gotest.tools v2.2.0+incompatible
 )
