@@ -14,7 +14,7 @@ require (
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/russellhaering/goxmldsig v1.3.0
+	github.com/russellhaering/goxmldsig v1.4.0
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
 	github.com/stretchr/testify v1.8.1
 	github.com/tinylib/msgp v1.1.8 // indirect
