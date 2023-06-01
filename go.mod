@@ -3,7 +3,7 @@ module github.com/meftunca/fiber-saml
 go 1.16
 
 require (
-	github.com/beevik/etree v1.1.0
+	github.com/beevik/etree v1.2.0
 	github.com/dchest/uniuri v1.2.0
 	github.com/gofiber/fiber/v2 v2.42.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
